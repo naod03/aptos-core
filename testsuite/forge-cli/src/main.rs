@@ -679,24 +679,16 @@ fn large_test_only_few_nodes_down() -> ForgeConfig<'static> {
 }
 
 fn changing_working_quorum_test_high_load() -> ForgeConfig<'static> {
-    changing_working_quorum_test_helper(
-        20,
-        120,
-        500,
-        300,
-        true,
-        true,
-        &ChangingWorkingQuorumTest {
-            min_tps: 50,
-            always_healthy_nodes: 0,
-            max_down_nodes: 20,
-            num_large_validators: 0,
-            add_execution_delay: false,
-            // Use longer check duration, as we are bringing enough nodes
-            // to require state-sync to catch up to have consensus.
-            check_period_s: 53,
-        },
-    )
+    changing_working_quorum_test_helper(20, 120, 500, 300, true, true, &ChangingWorkingQuorumTest {
+        min_tps: 50,
+        always_healthy_nodes: 0,
+        max_down_nodes: 20,
+        num_large_validators: 0,
+        add_execution_delay: false,
+        // Use longer check duration, as we are bringing enough nodes
+        // to require state-sync to catch up to have consensus.
+        check_period_s: 53,
+    })
 }
 
 fn changing_working_quorum_test() -> ForgeConfig<'static> {
@@ -888,22 +880,20 @@ fn individual_workload_tests(test_name: String, config: ForgeConfig) -> ForgeCon
             },
         )
         .with_success_criteria(
-            SuccessCriteria::new(
-                match test_name.as_str() {
-                    "account_creation" => 3700,
-                    "nft_mint" => 1000,
-                    "publishing" => 60,
-                    "write_new_resource" => 3700,
-                    "module_loading" => 1800,
-                    _ => unreachable!("{}", test_name),
-                }
-            )
-                .add_no_restarts()
-                .add_wait_for_catchup_s(240)
-                .add_chain_progress(StateProgressThreshold {
-                    max_no_progress_secs: 20.0,
-                    max_round_gap: 6,
-                }),
+            SuccessCriteria::new(match test_name.as_str() {
+                "account_creation" => 3700,
+                "nft_mint" => 1000,
+                "publishing" => 60,
+                "write_new_resource" => 3700,
+                "module_loading" => 1800,
+                _ => unreachable!("{}", test_name),
+            })
+            .add_no_restarts()
+            .add_wait_for_catchup_s(240)
+            .add_chain_progress(StateProgressThreshold {
+                max_no_progress_secs: 20.0,
+                max_round_gap: 6,
+            }),
         )
 }
 
