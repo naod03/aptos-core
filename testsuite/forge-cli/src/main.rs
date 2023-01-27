@@ -203,6 +203,11 @@ fn main() -> Result<()> {
     let duration = Duration::from_secs(args.duration_secs as u64);
     let suite_name: &str = args.suite.as_ref();
 
+    let suite_name = if suite_name == "compat" {
+        panic!();
+    } else {
+        "validator_reboot_stress_test"
+    };
     let runtime = Runtime::new()?;
     match args.cli_cmd {
         // cmd input for test
@@ -911,7 +916,11 @@ fn validator_reboot_stress_test(config: ForgeConfig) -> ForgeConfig {
     config
         .with_initial_validator_count(NonZeroUsize::new(15).unwrap())
         .with_initial_fullnode_count(1)
-        .with_network_tests(vec![&ValidatorRebootStressTest])
+        .with_network_tests(vec![&ValidatorRebootStressTest {
+            num_simultaneously: 6,
+            down_time_secs: 60.0,
+            pause_secs: 60.0,
+        }])
         .with_success_criteria(SuccessCriteria::new(2000).add_wait_for_catchup_s(600))
         .with_genesis_helm_config_fn(Arc::new(|helm_values| {
             helm_values["chain"]["epoch_duration_secs"] = 120.into();
