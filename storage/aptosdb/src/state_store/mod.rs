@@ -300,6 +300,30 @@ impl StateStore {
         }
     }
 
+    #[cfg(feature = "db-debugger")]
+    pub fn catch_up_state_merkle_db(ledger_db: Arc<DB>, state_merkle_db: DB) -> Result<()> {
+        use aptos_config::config::NO_OP_STORAGE_PRUNER_CONFIG;
+
+        let arc_state_merkle_rocksdb = Arc::new(state_merkle_db);
+        let state_pruner = StatePrunerManager::new(
+            Arc::clone(&arc_state_merkle_rocksdb),
+            NO_OP_STORAGE_PRUNER_CONFIG.state_merkle_pruner_config,
+        );
+        let epoch_snapshot_pruner = StatePrunerManager::new(
+            Arc::clone(&arc_state_merkle_rocksdb),
+            NO_OP_STORAGE_PRUNER_CONFIG.state_merkle_pruner_config,
+        );
+        let state_merkle_db = Arc::new(StateMerkleDb::new(arc_state_merkle_rocksdb, 0));
+        let state_db = Arc::new(StateDb {
+            ledger_db,
+            state_merkle_db,
+            state_pruner,
+            epoch_snapshot_pruner,
+        });
+        Self::create_buffered_state_from_latest_snapshot(&state_db, 0, false)?;
+        Ok(())
+    }
+
     fn create_buffered_state_from_latest_snapshot(
         state_db: &Arc<StateDb>,
         buffered_state_target_items: usize,

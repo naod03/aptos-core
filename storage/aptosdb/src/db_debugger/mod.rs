@@ -5,6 +5,7 @@ mod checkpoint;
 mod common;
 mod ledger;
 mod state_tree;
+mod truncation;
 
 use anyhow::Result;
 use clap::Parser;
@@ -18,6 +19,8 @@ pub enum Cmd {
 
     #[clap(subcommand)]
     Ledger(ledger::Cmd),
+
+    Truncation(truncation::Cmd),
 }
 
 impl Cmd {
@@ -26,6 +29,7 @@ impl Cmd {
             Cmd::StateTree(cmd) => cmd.run(),
             Cmd::Checkpoint(cmd) => cmd.run(),
             Cmd::Ledger(cmd) => cmd.run(),
+            Cmd::Truncation(cmd) => cmd.run(),
         }
     }
 }
