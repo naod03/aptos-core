@@ -8,7 +8,6 @@ use aptos_temppath::TempPath;
 use aptos_types::account_address::AccountAddress;
 use git2::{Oid, Repository};
 use serde::{Deserialize, Serialize};
-use std::process::Command;
 
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct FrameworkReleaseConfig {
@@ -116,7 +115,16 @@ pub fn generate_upgrade_proposals(
             )?;
         };
 
-        let script = std::fs::read_to_string(move_script_path.as_path())?;
+        let mut script = format!(
+            "// commit hash: {}\n",
+            if let Some(commit_hash) = &config.git_hash {
+                commit_hash.as_str()
+            } else {
+                git_version::git_version!()
+            }
+        );
+
+        script.push_str(&std::fs::read_to_string(move_script_path.as_path())?);
 
         result.push((script_name, script));
     }

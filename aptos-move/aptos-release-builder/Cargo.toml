@@ -25,6 +25,7 @@ bcs = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
 git2 = { workspace = true }
+git-version = "0.3.5"
 hex = { workspace = true }
 move-binary-format = { workspace = true }
 move-core-types = { workspace = true }
