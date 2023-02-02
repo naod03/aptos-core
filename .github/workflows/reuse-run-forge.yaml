@@ -1,4 +1,4 @@
-name: Run Forge
+name: "*run Forge reusable workflow"
 
 on:
   # this is called from within the build-images.yaml workflow since we depend on the images having been built before

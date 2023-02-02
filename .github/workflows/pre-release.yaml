@@ -1,0 +1,241 @@
+name: "pre-release"
+on:
+  # Allow triggering manually
+  # This should be the only entrypoint for the workflow for manual
+  workflow_dispatch:
+    inputs:
+      GIT_SHA:
+        required: true
+        type: string
+        description: The git SHA1 to test.
+  schedule:
+    - cron: "0 9/12 * * *" # run it twice a day
+  pull_request:
+    paths:
+      - ".github/workflows/pre-release.yaml"
+  push:
+    branches:
+      - devnet
+      - testnet
+      - mainnet
+      - aptos-node-v*
+
+# cancel redundant builds
+concurrency:
+  # cancel redundant builds on PRs (only on PR, not on branches)
+  # Assume that pushes to these special protected branches will not be too frequent, as to overwhelm the testing infra
+  group: ${{ github.workflow }}-${{ (github.event_name == 'pull_request' && github.ref) || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  # This job determines the target of the replay-verify job. It's a separate job so that we can use the `needs` syntax to make the replay-verify job depend on it.
+  # The replay-verify job should run under these conditions:
+  # - If we're running on a PR, we want to run the replay-verify job on all networks. But with a shorter timeout so as to only test the functionality of the workflow
+  # - If we're running on a workflow_dispatch, we want to run the replay-verify job on the network specified in the workflow_dispatch.
+  # - If we're running on a schedule, we want to run both the testnet and mainnet replay-verify jobs. This is the primary way the replay-verify workflow will run
+  determine-args:
+    runs-on: ubuntu-latest
+    outputs:
+      GIT_SHA: ${{ steps.determine-args.outputs.GIT_SHA }}
+      VERIFY_TIMEOUT_MINUTES: ${{ steps.determine-args.outputs.VERIFY_TIMEOUT_MINUTES }}
+      VERIFY_RUNS_ON: ${{ steps.determine-args.outputs.VERIFY_RUNS_ON }}
+    steps:
+      - name: Determine target network
+        id: determine-args
+        run: |
+          set -x
+
+          # Constants for replay-verify job, depending on what triggered this workflow
+          TESTING_VERIFY_TIMEOUT_MINUTES=20
+          FULL_SCALE_VERIFY_TIMEOUT_MINUTES=720
+          TESTING_VERIFY_RUNS_ON="medium-perf-docker-with-local-ssd" # also ubuntu-latest
+          FULL_SCALE_VERIFY_RUNS_ON="high-perf-docker-with-local-ssd"
+
+          # If there's a user input (workflow_dispatch), we'll use it. Otherwise we'll use the tip of the PR or the tip of the branch
+          # https://github.com/actions/checkout#checkout-pull-request-head-commit-instead-of-merge-commit
+          echo "GIT_SHA=${{ inputs.GIT_SHA || github.event.pull_request.head.sha || github.sha }}" >> $GITHUB_OUTPUT
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # If we're running on a PR, using the testing constants, which use less resources
+            # so as to only test the functionality of the workflow
+            echo "VERIFY_TIMEOUT_MINUTES=${TESTING_VERIFY_TIMEOUT_MINUTES}" >> $GITHUB_OUTPUT
+            echo "VERIFY_RUNS_ON=${TESTING_VERIFY_RUNS_ON}" >> $GITHUB_OUTPUT
+
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            # If we're running on a workflow_dispatch, we want to use the user-specified inputs
+            echo "VERIFY_TIMEOUT_MINUTES=${{ inputs.VERIFY_TIMEOUT_MINUTES }}" >> $GITHUB_OUTPUT
+            echo "VERIFY_RUNS_ON=${{ inputs.VERIFY_RUNS_ON }}" >> $GITHUB_OUTPUT
+
+          elif [[ "${{ github.event_name }}" == "schedule" ]] || [[ "${{ github.event_name }}" == "push" ]]; then
+            # If we're running on a schedule or push, we want to use the main full-scale constants
+            echo "VERIFY_TIMEOUT_MINUTES=${FULL_SCALE_VERIFY_TIMEOUT_MINUTES}" >> $GITHUB_OUTPUT
+            echo "VERIFY_RUNS_ON=${FULL_SCALE_VERIFY_RUNS_ON}" >> $GITHUB_OUTPUT
+
+          else
+            echo "Unknown event: ${{ github.event_name }}"
+            exit 1
+          fi
+
+  testnet-replay-verify:
+    needs: determine-args
+    uses: ./.github/workflows/reuse-run-replay-verify.yaml
+    secrets: inherit
+    with:
+      GIT_SHA: ${{ needs.determine-args.outputs.GIT_SHA }}
+      # replay-verify config
+      BUCKET: aptos-testnet-backup-2223d95b
+      SUB_DIR: e1
+      HISTORY_START: 350000000 # TODO: We need an exhaustive list of txns_to_skip before we can set this to 0.
+      TXNS_TO_SKIP: 46874937 151020059 409163615 409163669 409163708 409163774 409163845 409163955 409164059 409164191 414625832
+      BACKUP_CONFIG_TEMPLATE_PATH: terraform/helm/fullnode/files/backup/s3-public.yaml
+      # workflow config
+      RUNS_ON: ${{ needs.determine-args.outputs.VERIFY_RUNS_ON }}
+      TIMEOUT_MINUTES: ${{ needs.determine-args.outputs.VERIFY_TIMEOUT_MINUTES }}
+
+  mainnet-replay-verify:
+    needs: determine-args
+    uses: ./.github/workflows/reuse-run-replay-verify.yaml
+    secrets: inherit
+    with:
+      GIT_SHA: ${{ needs.determine-args.outputs.GIT_SHA }}
+      # replay-verify config
+      BUCKET: aptos-mainnet-backup-backup-831a69a8
+      SUB_DIR: e1
+      HISTORY_START: 0
+      TXNS_TO_SKIP: 12253479 12277499
+      BACKUP_CONFIG_TEMPLATE_PATH: terraform/helm/fullnode/files/backup/s3-public.yaml
+      # workflow config
+      RUNS_ON: ${{ needs.determine-args.outputs.VERIFY_RUNS_ON }}
+      TIMEOUT_MINUTES: ${{ needs.determine-args.outputs.VERIFY_TIMEOUT_MINUTES }}
+
+  testnet-module-verify:
+    needs: determine-args
+    uses: ./.github/workflows/reuse-run-module-verify.yaml
+    secrets: inherit
+    with:
+      GIT_SHA: ${{ needs.determine-args.outputs.GIT_SHA }}
+      BUCKET: aptos-testnet-backup-2223d95b
+      SUB_DIR: e1
+      BACKUP_CONFIG_TEMPLATE_PATH: terraform/helm/fullnode/files/backup/s3-public.yaml
+      # workflow config
+      RUNS_ON: ${{ needs.determine-args.outputs.VERIFY_RUNS_ON }}
+      TIMEOUT_MINUTES: ${{ needs.determine-args.outputs.VERIFY_TIMEOUT_MINUTES }}
+
+  mainnet-module-verify:
+    needs: determine-args
+    uses: ./.github/workflows/reuse-run-module-verify.yaml
+    secrets: inherit
+    with:
+      GIT_SHA: ${{ needs.determine-args.outputs.GIT_SHA }}
+      BUCKET: aptos-mainnet-backup-backup-831a69a8
+      SUB_DIR: e1
+      BACKUP_CONFIG_TEMPLATE_PATH: terraform/helm/fullnode/files/backup/s3-public.yaml
+      # workflow config
+      RUNS_ON: ${{ needs.determine-args.outputs.VERIFY_RUNS_ON }}
+      TIMEOUT_MINUTES: ${{ needs.determine-args.outputs.VERIFY_TIMEOUT_MINUTES }}
+
+  run-forge-performance:
+    needs: determine-args
+    uses: ./.github/workflows/reuse-run-forge.yaml
+    secrets: inherit
+    with:
+      GIT_SHA: ${{ needs.determine-args.outputs.GIT_SHA }}
+      FORGE_NAMESPACE: forge-performance
+      # Run for 2 hours unless it is on a PR
+      FORGE_RUNNER_DURATION_SECS: ${{ github.event_name == 'pull_request' && 300 || 7200 }}
+      # Land blocking is performance test
+      FORGE_TEST_SUITE: land_blocking
+      # Enable performance profile
+      FORGE_ENABLE_PERFORMANCE: true
+
+  run-release-blocking-forge:
+    needs: determine-args
+    uses: ./.github/workflows/reuse-run-forge.yaml
+    secrets: inherit
+    with:
+      GIT_SHA: ${{ needs.determine-args.outputs.GIT_SHA }}
+      # Run for 5 hours unless it is on a PR
+      FORGE_RUNNER_DURATION_SECS: ${{ github.event_name == 'pull_request' && 300 || 18000 }}
+      FORGE_ENABLE_HAPROXY: true
+      FORGE_TEST_SUITE: land_blocking
+      # Give us 12 hour timeout
+      TIMEOUT_MINUTES: 720
+
+  run-forge-validator-reboot-stress-test:
+    needs: determine-args
+    uses: ./.github/workflows/reuse-run-forge.yaml
+    secrets: inherit
+    with:
+      GIT_SHA: ${{ needs.determine-args.outputs.GIT_SHA }}
+      FORGE_NAMESPACE: forge-validator-reboot-stress
+      # Run for 40 minutes unless it is on a PR
+      FORGE_RUNNER_DURATION_SECS: ${{ github.event_name == 'pull_request' && 300 || 2400 }}
+      FORGE_TEST_SUITE: validator_reboot_stress_test
+
+  run-forge-three-region:
+    needs: determine-args
+    uses: ./.github/workflows/reuse-run-forge.yaml
+    secrets: inherit
+    with:
+      GIT_SHA: ${{ needs.determine-args.outputs.GIT_SHA }}
+      FORGE_NAMESPACE: forge-three-region-with-different-node-speed
+      # Run for 30 minutes unless it is on a PR
+      FORGE_RUNNER_DURATION_SECS: ${{ github.event_name == 'pull_request' && 300 || 1800 }}
+      FORGE_TEST_SUITE: three_region_simulation_with_different_node_speed
+      FORGE_ENABLE_FAILPOINTS: true # this is required
+
+  run-forge-consensus-stress-test:
+    needs: determine-args
+    uses: ./.github/workflows/reuse-run-forge.yaml
+    secrets: inherit
+    with:
+      GIT_SHA: ${{ needs.determine-args.outputs.GIT_SHA }}
+      FORGE_NAMESPACE: forge-consensus-stress-test
+      # Run for 40 minutes unless it is on a PR
+      FORGE_RUNNER_DURATION_SECS: ${{ github.event_name == 'pull_request' && 300 || 2400 }}
+      FORGE_TEST_SUITE: consensus_stress_test
+
+  run-forge-account-creation-test:
+    needs: determine-args
+    uses: ./.github/workflows/reuse-run-forge.yaml
+    secrets: inherit
+    with:
+      GIT_SHA: ${{ needs.determine-args.outputs.GIT_SHA }}
+      FORGE_NAMESPACE: forge-account-creation-test
+      # Run for 15 minutes unless it is on a PR
+      FORGE_RUNNER_DURATION_SECS: ${{ github.event_name == 'pull_request' && 300 || 900 }}
+      FORGE_TEST_SUITE: account_creation
+
+  run-forge-fullnode-reboot-stress-test:
+    needs: determine-args
+    uses: ./.github/workflows/reuse-run-forge.yaml
+    secrets: inherit
+    with:
+      GIT_SHA: ${{ needs.determine-args.outputs.GIT_SHA }}
+      FORGE_NAMESPACE: forge-fullnode-reboot-stress
+      # Run for 30 minutes unless it is on a PR
+      FORGE_RUNNER_DURATION_SECS: ${{ github.event_name == 'pull_request' && 300 || 1800 }}
+      FORGE_TEST_SUITE: fullnode_reboot_stress_test
+
+  run-forge-state-sync-failures-catching-up-test:
+    needs: determine-args
+    uses: ./.github/workflows/reuse-run-forge.yaml
+    secrets: inherit
+    with:
+      GIT_SHA: ${{ needs.determine-args.outputs.GIT_SHA }}
+      FORGE_NAMESPACE: forge-state-sync-failures-catching-up-test
+      # Run for 30 minutes unless it is on a PR
+      FORGE_RUNNER_DURATION_SECS: ${{ github.event_name == 'pull_request' && 300 || 1800 }}
+      FORGE_TEST_SUITE: state_sync_failures_catching_up
+      FORGE_ENABLE_FAILPOINTS: true # this is required
+
+  run-forge-state-sync-perf-fullnode-apply-test:
+    needs: determine-args
+    uses: ./.github/workflows/reuse-run-forge.yaml
+    secrets: inherit
+    with:
+      GIT_SHA: ${{ needs.determine-args.outputs.GIT_SHA }}
+      FORGE_NAMESPACE: forge-state-sync-perf-fullnode-apply
+      # Run for 40 minutes unless it is on a PR
+      FORGE_RUNNER_DURATION_SECS: ${{ github.event_name == 'pull_request' && 300 || 2400 }}
+      FORGE_TEST_SUITE: state_sync_perf_fullnodes_apply_outputs

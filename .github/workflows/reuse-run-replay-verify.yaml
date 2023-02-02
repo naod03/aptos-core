@@ -1,24 +1,23 @@
-name: "*replay-verify reusable workflow"
+name: "*run replay-verify reusable workflow"
 
 on:
   workflow_call:
-  workflow_dispatch:
     inputs:
       GIT_SHA:
-        required: false
+        required: true
         type: string
-        description: The git SHA1 to test. If not specified, it will use the latest commit on main.
+        description: The git SHA1 to test.
       # replay-verify config
       BUCKET:
-        required: false
+        required: true
         type: string
         description: The bucket to use for the backup. If not specified, it will use the default bucket.
       SUB_DIR:
-        required: false
+        required: true
         type: string
         description: The subdirectory to use for the backup. If not specified, it will use the default subdirectory.
       HISTORY_START:
-        required: false
+        required: true
         type: string
         description: The history start to use for the backup. If not specified, it will use the default history start.
       TXNS_TO_SKIP:
@@ -37,13 +36,50 @@ on:
         default: "high-perf-docker-with-local-ssd"
       TIMEOUT_MINUTES:
         description: "The timeout for the job."
-        type: number
+        type: string
         required: true
-        default: 720
+        default: "720"
+  workflow_dispatch:
+    inputs:
+      GIT_SHA:
+        required: true
+        type: string
+        description: The git SHA1 to test.
+      # replay-verify config
+      BUCKET:
+        required: true
+        type: string
+        description: The bucket to use for the backup. If not specified, it will use the default bucket.
+      SUB_DIR:
+        required: true
+        type: string
+        description: The subdirectory to use for the backup. If not specified, it will use the default subdirectory.
+      HISTORY_START:
+        required: true
+        type: string
+        description: The history start to use for the backup. If not specified, it will use the default history start.
+      TXNS_TO_SKIP:
+        required: false
+        type: string
+        description: The number of transactions to skip. If not specified, it will use the default number of transactions to skip.
+      BACKUP_CONFIG_TEMPLATE_PATH:
+        description: "The path to the backup config template to use."
+        type: string
+        required: true
+      # GHA job config
+      RUNS_ON:
+        description: "The runner to use for the job."
+        type: string
+        required: true
+        default: "high-perf-docker-with-local-ssd"
+      TIMEOUT_MINUTES:
+        description: "The timeout for the job."
+        type: string
+        required: true
+        default: "720"
 
 jobs:
   replay-verify:
-    # if we're running on a PR, it's only for testing purposes, so we can set a shorter timeout
     timeout-minutes: ${{ inputs.TIMEOUT_MINUTES }}
     runs-on: ${{ inputs.RUNS_ON }}
     steps:
