@@ -287,7 +287,13 @@ impl Default for ReleaseConfig {
             }),
             gas_schedule: Some(aptos_gas::gen::current_gas_schedule()),
             version: None,
-            feature_flags: None,
+            feature_flags: Some(Features {
+                enabled: aptos_vm_genesis::default_features()
+                    .into_iter()
+                    .map(crate::components::feature_flags::FeatureFlag::from)
+                    .collect(),
+                disabled: vec![],
+            }),
             consensus_config: Some(OnChainConsensusConfig::default()),
             is_multi_step: false,
             remote_endpoint: None,
