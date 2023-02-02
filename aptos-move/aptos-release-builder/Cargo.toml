@@ -23,6 +23,7 @@ aptos-types = { workspace = true }
 bcs = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
+git2 = { workspace = true }
 hex = { workspace = true }
 move-binary-format = { workspace = true }
 move-core-types = { workspace = true }

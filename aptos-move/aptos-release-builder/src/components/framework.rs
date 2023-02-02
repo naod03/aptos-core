@@ -4,12 +4,14 @@
 use crate::components::get_execution_hash;
 use anyhow::Result;
 use aptos_temppath::TempPath;
+use git2::{Oid, Repository};
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct FrameworkReleaseConfig {
     pub bytecode_version: u32,
+    pub git_hash: Option<String>,
 }
 
 pub fn generate_upgrade_proposals(
@@ -17,6 +19,8 @@ pub fn generate_upgrade_proposals(
     is_testnet: bool,
     next_execution_hash: Vec<u8>,
 ) -> Result<Vec<(String, String)>> {
+    const APTOS_GIT_PATH: &str = "https://github.com/aptos-labs/aptos-core.git";
+
     let mut package_path_list = vec![
         ("0x1", "aptos-move/framework/move-stdlib"),
         ("0x1", "aptos-move/framework/aptos-stdlib"),
@@ -26,9 +30,14 @@ pub fn generate_upgrade_proposals(
 
     let mut result: Vec<(String, String)> = vec![];
 
-    let mut root_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
-    root_path.pop();
-    root_path.pop();
+    let temp_root_path = TempPath::new();
+    temp_root_path.create_as_dir()?;
+
+    if let Some(revision) = &config.git_hash {
+        let repository = Repository::clone(APTOS_GIT_PATH, temp_root_path.path())?;
+        let commit = repository.find_commit(Oid::from_str(revision)?)?;
+        repository.checkout_tree(commit.as_object(), None)?;
+    };
 
     // For generating multi-step proposal files, we need to generate them in the reverse order since
     // we need the hash of the next script.
@@ -37,13 +46,22 @@ pub fn generate_upgrade_proposals(
         package_path_list.reverse();
     }
 
+    let mut root_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
+    root_path.pop();
+    root_path.pop();
+
     for (publish_addr, relative_package_path) in package_path_list.iter() {
         let temp_script_path = TempPath::new();
         temp_script_path.create_as_file()?;
         let mut move_script_path = temp_script_path.path().to_path_buf();
         move_script_path.set_extension("move");
 
-        let mut package_path = root_path.clone();
+        let mut package_path = if config.git_hash.is_some() {
+            temp_root_path.path().to_path_buf()
+        } else {
+            root_path.clone()
+        };
+
         package_path.push(relative_package_path);
 
         let script_name = package_path

@@ -283,6 +283,7 @@ impl Default for ReleaseConfig {
             testnet: true,
             framework_release: Some(FrameworkReleaseConfig {
                 bytecode_version: 6,
+                git_hash: None,
             }),
             gas_schedule: Some(aptos_gas::gen::current_gas_schedule()),
             version: None,
