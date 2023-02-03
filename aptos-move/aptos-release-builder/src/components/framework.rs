@@ -44,7 +44,7 @@ pub fn generate_upgrade_proposals(
         repository.checkout_tree(commit.as_object(), None)?;
         commit_info
     } else {
-        git_version::git_describe!().to_string()
+        git_version::git_version!().to_string()
     };
 
     // For generating multi-step proposal files, we need to generate them in the reverse order since
@@ -125,7 +125,7 @@ pub fn generate_upgrade_proposals(
         let mut script = format!(
             "// Framework commit hash: {} \n// Builder commit hash: {}\n",
             commit_info,
-            git_version::git_describe!()
+            git_version::git_version!()
         );
 
         script.push_str(&std::fs::read_to_string(move_script_path.as_path())?);
